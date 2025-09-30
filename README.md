@@ -428,20 +428,4 @@ services:
 
 ---
 
-## 14) Next Steps
-1. Finalize topic schemas & Avro (optional) + add Schema Registry
-2. Implement **User-Service** registration + `user.created.v1`
-3. Implement **Wallet-Service** consumer + initial 100 INR wallet creation
-4. Implement **Transaction-Service** orchestration & idempotency
-5. Implement **Notification-Service** templates + email sender outbox
-6. Wire Nginx + Gateway; add TLS & rate limit rules
-7. Ship Docker Compose for local; add Makefile scripts
 
----
-
-## 15) Acceptance Criteria (Phase‑1)
-- Registering a user creates user **and** wallet (100 INR), sends welcome email
-- Posting a transaction debits A, credits B, updates status, and sends emails
-- All inter‑service communications via Kafka; DLQs exist; basic dashboards live
-
-"# Kafka-Microservice-Payment-wallet" 
