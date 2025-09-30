@@ -368,6 +368,17 @@ mail.smtp.starttls.enable=true
 
 ---
 
+<img width="1919" height="1031" alt="Screenshot 2025-09-30 170013" src="https://github.com/user-attachments/assets/f1d2f86b-3d46-47fc-9508-94313fd196b7" />
+<img width="1909" height="1045" alt="Screenshot 2025-09-30 165953" src="https://github.com/user-attachments/assets/334d2999-9b2b-4ed9-9084-57e3c1c91ff6" />
+<img width="1865" height="1077" alt="Screenshot 2025-09-30 165944" src="https://github.com/user-attachments/assets/f2b17069-ff30-4653-9a1a-01faa594ef41" />
+<img width="1901" height="1079" alt="Screenshot 2025-09-30 165915" src="https://github.com/user-attachments/assets/690dc996-06f6-4764-aeb5-0e0b8abd62cf" />
+<img width="1913" height="1075" alt="Screenshot 2025-09-30 165904" src="https://github.com/user-attachments/assets/14cf5d3c-c538-40c2-baf3-7c9fcafec57d" />
+<img width="1906" height="1079" alt="Screenshot 2025-09-30 165311" src="https://github.com/user-attachments/assets/194c9f51-c4d2-4305-9641-135c7e414755" />
+<img width="1919" height="1020" alt="Screenshot 2025-09-30 165254" src="https://github.com/user-attachments/assets/f111875c-f6c4-4c64-9b6b-3beaea9ba726" />
+
+
+
+
 ## 11) Security
 - JWT for all internal/external APIs; Gateway enforces authN/Z
 - Encrypt PII at rest (email/phone), mask in logs
