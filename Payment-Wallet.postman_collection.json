@@ -1,0 +1,111 @@
+{
+	"info": {
+		"_postman_id": "7fc74ef5-aac4-491a-b1c3-987eb03ee4db",
+		"name": "Payment-Wallet",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
+		"_exporter_id": "38833937"
+	},
+	"item": [
+		{
+			"name": "user-registration",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "requestId",
+						"value": "873676",
+						"type": "text"
+					},
+					{
+						"key": "requestId",
+						"value": "1212",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"name\": \"ramu\",\r\n  \"email\": \"ramu@example.com\",\r\n  \"phone\": \"35674789087\",\r\n  \"kycNumber\": \"KYC151\"\r\n}\r\n\r\n\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://localhost:8083/user-service/user"
+			},
+			"response": []
+		},
+		{
+			"name": "transaction-service",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"fromUserId\":7,\r\n    \"toUserId\":10,\r\n    \"amount\":30.0,\r\n    \"comment\":\"testing\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://localhost:8082/transaction-service/transaction"
+			},
+			"response": []
+		},
+		{
+			"name": "transaction-verify",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"fromUserId\":7,\r\n    \"toUserId\":10,\r\n    \"amount\":30.0,\r\n    \"comment\":\"testing\"\r\n}"
+				},
+				"url": "http://localhost:8082/transaction-service/status/ea0c162d-6da2-4a70-ba91-6ff8dcbd0622"
+			},
+			"response": []
+		},
+		{
+			"name": "Get-UserById",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "requestId",
+						"value": "873676",
+						"type": "text"
+					},
+					{
+						"key": "requestId",
+						"value": "1212",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"name\": \"ramu\",\r\n  \"email\": \"ramu@example.com\",\r\n  \"phone\": \"35674789087\",\r\n  \"kycNumber\": \"KYC151\"\r\n}\r\n\r\n\r\n"
+				},
+				"url": "http://localhost:8083/user-service/profile/1"
+			},
+			"response": []
+		},
+		{
+			"name": "Get-WalletBalanceById",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": "http://localhost:8084/wallet-service/balance/1"
+			},
+			"response": []
+		}
+	]
+}
