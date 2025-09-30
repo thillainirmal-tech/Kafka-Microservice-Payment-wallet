@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Payment Result</title>
+    <!-- TailwindCSS CDN (no build step) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="color-scheme" content="light dark">
+    <style>
+        /* subtle skeleton shimmer */
+        .skeleton {
+            background: linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.12) 37%, rgba(0,0,0,0.06) 63%);
+            background-size: 400% 100%;
+            animation: shimmer 1.4s ease infinite;
+        }
+        @keyframes shimmer {
+            0% { background-position: 100% 0; }
+            100% { background-position: 0 0; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+<main class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-2xl">
+        <!-- Header -->
+        <header class="mb-4 text-center">
+            <h1 class="text-2xl md:text-3xl font-bold">Payment Status</h1>
+            <p class="text-sm text-slate-500">Order confirmation & receipt</p>
+        </header>
+
+        <!-- Card -->
+        <div class="bg-white rounded-2xl shadow p-5 md:p-8">
+            <!-- Status badge -->
+            <div id="statusBadge" class="mb-6 flex items-center justify-center">
+                <!-- dynamic -->
+            </div>
+
+            <!-- Amount -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="rounded-xl border border-slate-200 p-4">
+                    <div class="text-xs uppercase tracking-wide text-slate-500">Amount</div>
+                    <div id="amount" class="mt-1 text-2xl font-semibold">—</div>
+                </div>
+                <div class="rounded-xl border border-slate-200 p-4">
+                    <div class="text-xs uppercase tracking-wide text-slate-500">Currency</div>
+                    <div id="currency" class="mt-1 text-2xl font-semibold">INR</div>
+                </div>
+            </div>
+
+            <!-- Details -->
+            <div class="rounded-2xl bg-slate-50 p-4 md:p-6">
+                <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-slate-500">Transaction ID</dt>
+                        <dd class="mt-1 font-mono text-sm break-all flex items-center gap-2">
+                            <span id="txnId">—</span>
+                            <button id="copyBtn" class="text-blue-600 hover:underline text-xs">Copy</button>
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-slate-500">User ID</dt>
+                        <dd id="userId" class="mt-1 font-medium">—</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-slate-500">Status</dt>
+                        <dd id="statusText" class="mt-1 font-medium">—</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-slate-500">Updated</dt>
+                        <dd id="updatedAt" class="mt-1 font-medium">just now</dd>
+                    </div>
+                </dl>
+            </div>
+
+            <!-- Actions -->
+            <div class="mt-6 flex flex-col sm:flex-row gap-3">
+                <a id="homeBtn" href="/" class="flex-1 inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-4 py-3 font-medium hover:bg-slate-800 transition">
+                    Back to Home
+                </a>
+                <button id="printBtn" class="sm:w-40 inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-3 font-medium hover:bg-slate-100 transition">
+                    Print Receipt
+                </button>
+            </div>
+
+            <!-- Help / Error -->
+            <div id="errorBox" class="hidden mt-6 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 p-4 text-sm">
+                Something went wrong fetching your payment. Please retry in a moment.
+            </div>
+        </div>
+
+        <footer class="mt-4 text-center text-xs text-slate-400">
+            Need help? Contact support@example.com
+        </footer>
+    </div>
+</main>
+
+<script>
+    // ====== CONFIG ======
+    // If this page is served from your own domain that proxies to the PG,
+    // you can leave base as "" and call relative path.
+    // Otherwise, set full origin like "https://your-domain.com"
+    const STATUS_API_BASE = ""; // using same origin + Nginx route
+    const STATUS_PATH = (txnId) => `/pg-service/payment-status/${encodeURIComponent(txnId)}`;
+
+    // ====== UTIL ======
+    const $ = (id) => document.getElementById(id);
+    function qs(name) {
+        const p = new URLSearchParams(window.location.search);
+        return p.get(name);
+    }
+    function inr(amount) {
+        try {
+            return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })
+                .format(Number(amount ?? 0));
+        } catch { return `₹ ${amount}`; }
+    }
+    function badge(status) {
+        const base = "px-3 py-1.5 rounded-full text-sm font-semibold inline-flex items-center gap-2";
+        const dot = '<span class="w-2.5 h-2.5 rounded-full"></span>';
+        if (!status) return `<span class="${base} bg-slate-100 text-slate-700">${dot.replace('">',' bg-slate-400"></span>')}Checking…</span>`;
+        const s = status.toUpperCase();
+        if (s === "SUCCESS") return `<span class="${base} bg-emerald-50 text-emerald-700">${dot.replace('">',' bg-emerald-500"></span>')}Paid</span>`;
+        if (s === "FAILED")  return `<span class="${base} bg-rose-50 text-rose-700">${dot.replace('">',' bg-rose-500"></span>')}Failed</span>`;
+        return `<span class="${base} bg-amber-50 text-amber-700">${dot.replace('">',' bg-amber-500"></span>')}Pending</span>`;
+    }
+
+    // ====== MAIN ======
+    (async function () {
+        const txnId = qs('txnId');
+        $('txnId').textContent = txnId || '—';
+        $('statusBadge').innerHTML = badge(null);
+        $('statusText').textContent = 'Loading…';
+        $('amount').classList.add('skeleton'); $('currency').classList.add('skeleton');
+
+        // Copy button
+        $('copyBtn').addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText(txnId || ''); $('copyBtn').textContent = 'Copied!'; setTimeout(()=>$('copyBtn').textContent='Copy', 1200); } catch {}
+        });
+
+        // Print button
+        $('printBtn').addEventListener('click', () => window.print());
+
+        if (!txnId) {
+            $('errorBox').classList.remove('hidden');
+            $('statusBadge').innerHTML = badge('FAILED');
+            $('statusText').textContent = 'Missing txnId';
+            $('amount').classList.remove('skeleton'); $('currency').classList.remove('skeleton');
+            return;
+        }
+
+        try {
+            const res = await fetch(STATUS_API_BASE + STATUS_PATH(txnId), { credentials: 'include' });
+            if (!res.ok) throw new Error('Bad status ' + res.status);
+            const data = await res.json();
+            // data: { status, userId, amount }
+            $('statusBadge').innerHTML = badge(data.status);
+            $('statusText').textContent = (data.status || '—');
+
+            $('amount').classList.remove('skeleton');
+            $('currency').classList.remove('skeleton');
+            $('amount').textContent = inr(data.amount);
+            $('currency').textContent = 'INR';
+
+            $('userId').textContent = data.userId ?? '—';
+            $('updatedAt').textContent = new Date().toLocaleString();
+
+            // Optionally, redirect or show different CTAs based on status here.
+        } catch (e) {
+            console.error(e);
+            $('errorBox').classList.remove('hidden');
+            $('statusBadge').innerHTML = badge('FAILED');
+            $('statusText').textContent = 'Unable to fetch';
+            $('amount').classList.remove('skeleton'); $('currency').classList.remove('skeleton');
+        }
+    })();
+</script>
+</body>
+</html>
