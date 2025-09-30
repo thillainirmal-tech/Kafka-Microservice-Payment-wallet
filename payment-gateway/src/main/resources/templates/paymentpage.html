@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.w3.org/1999/xhtml">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Payment Page</title>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <style>
+        body { font-family: Arial; padding: 24px; }
+        .card { max-width: 520px; margin: 0 auto; background: #f7f7f9; padding: 20px; border-radius: 8px; }
+        .btn { background: #0a7cff; color: #fff; padding: 12px 16px; border: 0; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; }
+        .muted { color:#666; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>Pay <span th:text="${amount}"></span> <span th:text="${currency}"></span></h2>
+    <p class="muted">Merchant: <b th:text="${merchantName}"></b></p>
+    <button id="payBtn" class="btn">Pay Securely</button>
+</div>
+
+<script th:inline="javascript">
+    const options = {
+        key:      /*[[${rzpKey}]]*/ "",
+        amount:   null, // Razorpay shows amount from order
+        currency: /*[[${currency}]]*/ "INR",
+        name:     /*[[${merchantName}]]*/ "Merchant",
+        description: "Transaction " + /*[[${txnId}]]*/ "",
+        order_id: /*[[${orderId}]]*/ "",
+        notes: { app_txn_id: /*[[${txnId}]]*/ "" },
+
+        handler: function (response) {
+            // Send to server for signature verification, then server redirects to merchant
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = /*[[${verifyUrl}]]*/ "/pg-service/verify";
+            ['razorpay_payment_id','razorpay_order_id','razorpay_signature'].forEach((k)=>{
+                const input = document.createElement('input');
+                input.type = 'hidden'; input.name = k; input.value = response[k];
+                form.appendChild(input);
+            });
+            document.body.appendChild(form);
+            form.submit();
+        },
+
+        modal: { ondismiss: function(){ /* user closed */ } },
+        theme: { color: "#3399cc" }
+    };
+
+    document.getElementById('payBtn').addEventListener('click', function(){
+        const rzp = new window.Razorpay(options);
+        rzp.open();
+    });
+</script>
+</body>
+</html>
