@@ -1,0 +1,110 @@
+
+---------------APACHE KAFKA TUROTIAL---------------------------------------
+
+
+
+----------KRAFT MODE--------------------
+
+1.creating cluster
+
+bin\windows\kafka-storage.bat random-uuid
+
+egHLL2idT4677iTIooCEaw
+
+
+2.formatting data
+
+bin\windows\kafka-storage.bat format -t egHLL2idT4677iTIooCEaw -c .\config\kraft\server.properties
+Formatting metadata directory C:/kafka/tmp/kraft-combined-logs with metadata.version 3.9-IV0.
+
+3.start server
+
+bin\windows\kafka-server-start.bat .\config\kraft\server.properties
+
+4.create kafka topics
+
+\bin\windows\kafka-topics.bat --create --topic test --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+
+5.create console of producer
+
+bin\windows\kafka-console-producer.bat --topic test --bootstrap-server localhost:9092
+
+6.To Run consumer 
+
+bin\windows\kafka-console-consumer.bat --topic test --from-beginning --bootstrap-server localhost:9092
+
+
+---------ZOOKEEPER MODE----------------------------------------
+
+1.Start ZooKeeper
+
+.\bin\windows\zookeeper-server-start.bat .\config\zookeeper.properties
+
+Let us start three broker in cluster
+--------------------------------------------------------------------------------------------------------
+server-0.properties
+broker.id=0
+listeners=PLAINTEXT://0.0.0.0:9092
+advertised.listeners=PLAINTEXT://localhost:9092
+log.dirs=C:/kafka/tmp/kafka-logs-0
+num.partitions=1
+zookeeper.connect=localhost:2181
+--------------------------------------------------------------------------------------------------------
+server-1.properties
+broker.id=1
+listeners=PLAINTEXT://0.0.0.0:9093
+advertised.listeners=PLAINTEXT://localhost:9093
+log.dirs=C:/kafka/tmp/kafka-logs-1
+num.partitions=1
+zookeeper.connect=localhost:2181
+---------------------------------------------------------------------------------------------------------
+server-2.properties
+broker.id=2
+listeners=PLAINTEXT://0.0.0.0:9094
+advertised.listeners=PLAINTEXT://localhost:9094
+log.dirs=C:/kafka/tmp/kafka-logs-2
+num.partitions=1
+zookeeper.connect=localhost:2181
+---------------------------------------------------------------------------------------------------------
+
+
+2.start three broker
+1.Broker 0:
+-->.\bin\windows\kafka-server-start.bat .\config\server-0.properties
+2.Broker 1:
+-->.\bin\windows\kafka-server-start.bat .\config\server-1.properties
+3.Broker 3:
+-->.\bin\windows\kafka-server-start.bat .\config\server-2.properties
+
+3.Verify brokers registered in ZooKeeper
+
+.\bin\windows\zookeeper-shell.bat localhost:2181 ls /brokers/ids
+
+output:
+[0,1,2]
+
+4.client view(Optional)
+
+.\bin\windows\kafka-broker-api-versions.bat --bootstrap-server localhost:9092
+
+5.create topic
+.\bin\windows\kafka-topics.bat --create --topic my-topic --bootstrap-server localhost:9092 --partitions 3 --replication-factor 3
+
+Note:replication-factor must be ≤ number of brokers ~3 broker
+
+6.Describe the topic
+.\bin\windows\kafka-topics.bat --describe --bootstrap-server localhost:9092 --topic my-topic
+
+7.To Test producer/consumer
+
+1.Producer to my-topic:
+
+.\bin\windows\kafka-console-producer.bat --topic my-topic --bootstrap-server localhost:9092
+
+2.Consumer (from beginning):
+.\bin\windows\kafka-console-consumer.bat --topic orders.placed --bootstrap-server localhost:9092 --from-beginning
+
+.\bin\windows\kafka-console-consumer.bat --topic USER-CREATED --bootstrap-server localhost:9092 --from-beginning
+
+
+
