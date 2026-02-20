@@ -1,431 +1,140 @@
-# Major-Project — Payment Wallet (Kafka Microservices)
+# Kafka Microservice Payment Wallet
 
-> Version: 1.0 · Date: 28 Sep 2025
+## Project Overview
+Kafka Microservice Payment Wallet is a Java 21, Spring Boot 3.5.x multi-module system for wallet-based money movement. It uses event-driven communication through Apache Kafka to decouple services and adds AI-assisted fraud scoring in a dedicated `fraud-service`.
 
----
+The repository is organized as a Maven reactor with these modules:
+- `user-service`
+- `wallet-service`
+- `Transaction-service`
+- `notification-service`
+- `Common-CodeBase`
+- `fraud-service`
 
-## 1) Requirement Discussion
+## Architecture Description
+The platform follows a distributed, event-driven microservice architecture:
+- HTTP APIs are used for user and transaction initiation.
+- Domain events are exchanged through Kafka topics.
+- Each service owns its own responsibility and data lifecycle.
+- Fraud analysis is performed asynchronously for transaction events and published for downstream consumers.
 
-### Functional
-- User registration & profile management
-- Wallet creation & balance management
-- Peer-to-peer transfer (User A → User B)
-- Email/SMS/app notifications
-- Transaction history & statuses (INITIATED, VALIDATED, SUCCESS, FAILED, REVERSED)
-- Admin/reporting endpoints (basic)
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for full architecture details.
 
-### Non‑Functional
-- **Reliability:** exactly-once processing where feasible, idempotent operations
-- **Scalability:** horizontal scale on services and Kafka consumers
-- **Resilience:** retries, DLQ, circuit breakers, bulkheads
-- **Security:** JWT auth, TLS, secrets management, PII encryption at rest
-- **Observability:** logs, metrics, traces (OpenTelemetry), audit trail
-- **Data:** ACID for wallet/transaction tables, outbox pattern for Kafka
+## Microservices
+### 1) user-service
+Manages user lifecycle and profile operations.
 
-### Tech Stack (proposed)
-- **Backend:** Spring Boot 3.x, Java 17+
-- **Broker:** Apache Kafka (with Schema Registry optional)
-- **DB:** MySQL/PostgreSQL; Redis for caching (profiles, idempotency keys)
-- **Discovery/Gateway:** Eureka (or Consul) + Spring Cloud Gateway
-- **Infra:** Docker Compose (local), Kubernetes (prod), Nginx (edge)
-- **Email:** SMTP (e.g., Gmail/SES/SendGrid)
-- **Secrets:** Docker/K8s secrets, Vault (optional)
+### 2) wallet-service
+Manages wallet data and balance-related operations.
 
----
+### 3) Transaction-service
+Accepts transaction requests, persists state, and publishes transaction-init events to Kafka topic `transactions`.
 
-## 2) Design Discussion (High-Level)
+### 4) fraud-service
+Consumes transaction events, calls Spring AI (Ollama) for classification, persists fraud results, and publishes outcomes to `fraud_results`.
 
-### Microservices
-1. **User-Service** — user profile, KYC-lite, wallet bootstrap trigger
-2. **Wallet-Service** — wallet ledger, balance checks, holds, debit/credit
-3. **Transaction-Service** — orchestrates P2P transfers (saga)
-4. **Notification-Service** — email/SMS/app notifications, templating
+### 5) notification-service
+Consumes fraud results and sends alert emails for fraud-positive outcomes.
 
-### Kafka Topics (suggested)
-- `user.created.v1` (User-Service → Wallet/Notification)
-- `wallet.created.v1` (Wallet-Service → Notification)
-- `txn.initiated.v1` (Transaction-Service → Wallet-Service)
-- `txn.validated.v1` (Transaction-Service → Wallet-Service)
-- `wallet.debited.v1` / `wallet.credited.v1` (Wallet-Service → Transaction/Notification)
-- `txn.completed.v1` / `txn.failed.v1` (Transaction-Service → Notification)
-- `email.requested.v1` / `email.sent.v1` (Notification-Service)
-- `*.dlq.v1` dead-letter topics
+### 6) Common-CodeBase
+Shared DTOs/config utilities reused across modules.
 
-> **Keying:** Use business id as key (userId, walletId, txnId) to preserve order per entity.
+## Event Flow Explanation
+1. A client creates a transaction via `Transaction-service`.
+2. `Transaction-service` publishes transaction payloads to Kafka topic `transactions`.
+3. `fraud-service` listens on `transactions`, sends structured prompts to Ollama, and computes a classification.
+4. `fraud-service` stores the fraud result in DB and publishes to `fraud_results`.
+5. `notification-service` consumes `fraud_results`; when `fraud=true`, it logs a warning and sends an email alert.
 
-### Data Ownership (per service)
-- **User-Service:** `users` table
-- **Wallet-Service:** `wallets`, `wallet_ledger`
-- **Transaction-Service:** `transactions`, `txn_events`
-- **Notification-Service:** `email_outbox`, `templates`
+## Technologies Used
+- Java 21
+- Spring Boot 3.5.6
+- Spring Kafka
+- Spring AI (Ollama chat model)
+- Spring Data JPA
+- Maven multi-module build
+- Apache Kafka + ZooKeeper
+- Docker / Docker Compose
+- Lombok
+- JUnit + Mockito
 
-### Consistency & Reliability
-- Outbox pattern per service for publishing domain events
-- Idempotency with request keys (`Idempotency-Key` header + Redis)
-- Optimistic locking on wallet rows; pair with **serialized per-wallet** processing (partitioning by walletId)
-- Exactly-once: enable transactional producer & consumer where applicable
+## How to Run Locally
+### Prerequisites
+- Java 21
+- Maven 3.9+
+- Kafka broker (local or Docker)
+- Ollama running at `http://localhost:11434` with model `llama3.1`
+- MySQL (for services using persistence)
 
----
-
-## 3) Service Specs
-
-### 3.1 User-Service
-**Responsibilities**
-- Register user → persist & cache
-- Emit `user.created.v1`
-
-**REST Endpoints**
-- `POST /api/v1/users` register
-- `GET /api/v1/users/{id}` fetch
-
-**DB** (`users`)
-- `id` (PK, UUID/long), `email` (unique), `name`, `phone`, `status`, `created_at`
-
-**Events Produced**
-- `user.created.v1 { userId, email, name }`
-
-**Consumes**
-- (optional) `email.sent.v1` (for audit)
-
-**Cache**
-- Redis: `user:{id}`
-
-**Errors**
-- Duplicate email → 409; validation 400
-
----
-
-### 3.2 Wallet-Service
-**Responsibilities**
-- Create wallet on `user.created.v1` with initial balance 100 INR
-- Maintain balances & ledger; debit/credit atomically
-
-**REST Endpoints**
-- `GET /api/v1/wallets/{userId}` balance
-
-**DB**
-- `wallets(id PK, user_id unique, balance DECIMAL(18,2), version)`
-- `wallet_ledger(id PK, wallet_id, txn_id, type DEBIT|CREDIT, amount, balance_after, created_at)`
-
-**Events Produced**
-- `wallet.created.v1 { userId, walletId, balance }`
-- `wallet.debited.v1 / wallet.credited.v1 { txnId, userId, amount, balance }`
-
-**Consumes**
-- `user.created.v1` (create wallet)
-- `txn.initiated.v1` (reserve/validate funds?)
-- `txn.validated.v1` (perform debit/credit)
-
-**Concurrency**
-- Optimistic locking on `wallets.version`
-- Partition by `walletId` to serialize updates per wallet
-
----
-
-### 3.3 Transaction-Service
-**Responsibilities**
-- Orchestrate transfers; validate, instruct wallet updates; finalize status
-
-**REST Endpoints**
-- `POST /api/v1/transactions` { fromUserId, toUserId, amount, note }
-- `GET /api/v1/transactions/{id}`
-
-**DB**
-- `transactions(id PK, from_user_id, to_user_id, amount, status, created_at, updated_at)`
-- `txn_events(id, txn_id, type, payload, created_at)`
-
-**Flow**
-1. Persist `transactions` with `INITIATED`
-2. Publish `txn.initiated.v1`
-3. Optional validation (KYC/limits) → `txn.validated.v1`
-4. On wallet events, mark `SUCCESS`/`FAILED` and publish final status
-
-**Events Produced**
-- `txn.initiated.v1`, `txn.validated.v1`, `txn.completed.v1`, `txn.failed.v1`
-
-**Consumes**
-- `wallet.debited.v1`, `wallet.credited.v1`
-
-**Idempotency**
-- Deduplicate by `txnId`; store processed offsets/event ids
-
----
-
-### 3.4 Notification-Service
-**Responsibilities**
-- Send email/SMS/app notifications
-
-**Consumes**
-- `user.created.v1`, `wallet.created.v1`, `wallet.*`, `txn.*`
-
-**Templates**
-- `WELCOME`, `WALLET_UPDATE`, `TXN_SUCCESS`, `TXN_FAIL`
-
-**Outbox**
-- `email_outbox(id, type, to, subject, body, status)`
-
----
-
-## 4) Edge Design with Nginx & Payment Gateway (Extra)
-
-### 4.1 Nginx
-- TLS termination, HTTP/2, gzip, rate‑limit (per IP, per user)
-- Reverse proxy to **API Gateway** (Spring Cloud Gateway)
-- Static throttle for `/transactions` to mitigate abuse
-
-```nginx
-server {
-  listen 443 ssl http2;
-  server_name wallet.example.com;
-  ssl_certificate /etc/ssl/fullchain.pem;
-  ssl_certificate_key /etc/ssl/privkey.pem;
-
-  location /api/ {
-    proxy_set_header X-Request-Id $request_id;
-    proxy_pass http://api-gateway:8080/;
-  }
-}
+### Build all modules
+```bash
+mvn -DskipTests verify
 ```
 
-### 4.2 Payment Gateway (mockable)
-- **Checkout**: `POST /pg/v1/pay` → redirects to hosted page
-- **Callback/Webhook**: `POST /pg/v1/webhook` → Transaction-Service validates signature, correlates `txnId`
-- Use HMAC (shared secret) + replay protection (timestamp + nonce)
-
----
-
-## 5) User Registration — Detailed Flow
-
-**Steps**
-1. `POST /users` → create user in DB & cache
-2. Publish `user.created.v1`
-3. Wallet-Service consumes → creates wallet with **100 INR** initial balance & publishes `wallet.created.v1`
-4. Notification-Service sends Welcome + Wallet-created emails
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant C as Client
-  participant U as User-Service
-  participant K as Kafka
-  participant W as Wallet-Service
-  participant N as Notification-Service
-
-  C->>U: POST /users {email,name,phone}
-  U-->>K: user.created.v1 {userId,...}
-  K-->>W: user.created.v1
-  W->>W: create wallet(balance=100)
-  W-->>K: wallet.created.v1 {userId,walletId,balance}
-  K-->>N: wallet.created.v1
-  N->>N: send Welcome+Wallet emails
-  U-->>C: 201 Created {userId}
+### Run services individually (example)
+```bash
+mvn -pl Transaction-service spring-boot:run
+mvn -pl fraud-service spring-boot:run
+mvn -pl notification-service spring-boot:run
 ```
 
----
-
-## 6) Transaction: User A → User B — Detailed Flow
-
-**Happy Path**
-1. Client calls `POST /transactions`
-2. Transaction-Service stores `INITIATED` (+ idempotency key)
-3. Publish `txn.initiated.v1` (and `txn.validated.v1` if sync checks pass)
-4. Wallet-Service debits A, credits B (atomic per-wallet updates) and emits events
-5. Transaction-Service marks `COMPLETED` and emits `txn.completed.v1`
-6. Notification-Service sends emails to A & B
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant C as Client
-  participant T as Transaction-Service
-  participant K as Kafka
-  participant W as Wallet-Service
-  participant N as Notification-Service
-
-  C->>T: POST /transactions {from=A,to=B,amount}
-  T->>T: save INITIATED
-  T-->>K: txn.initiated.v1 {txnId,A,B,amount}
-  K-->>W: txn.initiated.v1
-  W->>W: validate funds(A)
-  W-->>K: wallet.debited.v1 {txnId,A,amount}
-  W-->>K: wallet.credited.v1 {txnId,B,amount}
-  K-->>T: wallet.*.v1
-  T->>T: mark COMPLETED
-  T-->>K: txn.completed.v1 {txnId}
-  K-->>N: txn.completed.v1
-  N->>N: send success emails to A & B
+### Run tests for fraud-service
+```bash
+mvn -pl fraud-service test
 ```
 
-**Failure Paths**
-- Insufficient funds → `txn.failed.v1`; only **credit** after successful **debit**; if credit fails after debit, publish **compensation event** to reverse debit (saga pattern)
-- Email failure → push to `email.dlq.v1`, do not block transaction state machine
+## Docker Instructions
+A root `docker-compose.yml` is included and currently provisions:
+- `zookeeper`
+- `kafka`
+- `fraud-service`
 
-**Idempotency & Exactly-Once Hints**
-- Client supplies `Idempotency-Key` header; Transaction-Service keeps `idempotency:{key}` for 24h
-- Kafka producer with `enable.idempotence=true`, transactions spanning DB outbox write + send
-- Consumer committal within transaction (read-process-write pattern)
+### Start stack
+```bash
+docker compose up --build
+```
 
----
+### Stop stack
+```bash
+docker compose down
+```
 
-## 7) API Sketches
+> `fraud-service` in Docker is configured with:
+> - `SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092`
+> - `FRAUD_KAFKA_PRODUCER_TOPIC=fraud_results`
+> - `SPRING_AI_OLLAMA_BASE_URL=http://host.docker.internal:11434`
 
-**User-Service**
-```http
-POST /api/v1/users
-Content-Type: application/json
+## AI Fraud Detection Explanation
+`fraud-service` uses Spring AI `ChatClient` with Ollama:
+- It sends a constrained prompt asking for strict JSON output.
+- Expected response format:
+  ```json
+  {"classification":"FRAUD"|"SAFE","confidence":0.0}
+  ```
+- The response is parsed using Jackson.
+- Invalid/empty responses and any model/parsing errors fallback to:
+  ```json
+  {"classification":"SAFE","confidence":0.0}
+  ```
+
+Detailed module-level explanation: [fraud-service/README.md](./fraud-service/README.md)
+
+## Sample Transaction Payload
+```json
 {
-  "email":"a@x.com",
-  "name":"Alice",
-  "phone":"90000"
+  "id": 101,
+  "fromUserId": 7,
+  "toUserId": 19,
+  "amount": 4500.75,
+  "requestId": "a5f8a1ef-2bfa-4936-a5d7-4b1deac61f31"
 }
 ```
 
-**Transaction-Service**
-```http
-POST /api/v1/transactions
-Idempotency-Key: 6f1c-...-b42e
-{
-  "fromUserId":7,
-  "toUserId":10,
-  "amount":30.00,
-  "note":"Dinner"
-}
-```
-
----
-
-## 8) Data Models (DDL — indicative)
-
-```sql
-CREATE TABLE users (
-  id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  name VARCHAR(120),
-  phone VARCHAR(32),
-  status VARCHAR(32) DEFAULT 'ACTIVE',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE wallets (
-  id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  user_id BIGINT UNIQUE NOT NULL,
-  balance DECIMAL(18,2) NOT NULL,
-  version BIGINT NOT NULL DEFAULT 0,
-  CONSTRAINT fk_wallet_user FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
-CREATE TABLE wallet_ledger (
-  id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  wallet_id BIGINT NOT NULL,
-  txn_id BIGINT NOT NULL,
-  type VARCHAR(10) NOT NULL,
-  amount DECIMAL(18,2) NOT NULL,
-  balance_after DECIMAL(18,2) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE transactions (
-  id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  from_user_id BIGINT NOT NULL,
-  to_user_id BIGINT NOT NULL,
-  amount DECIMAL(18,2) NOT NULL,
-  status VARCHAR(20) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NULL
-);
-```
-
----
-
-## 9) Configuration Hints
-
-```properties
-# Kafka (Spring)
-spring.kafka.producer.acks=all
-spring.kafka.producer.enable-idempotence=true
-spring.kafka.producer.properties.max.in.flight.requests.per.connection=5
-spring.kafka.consumer.enable-auto-commit=false
-spring.kafka.listener.ack-mode=MANUAL
-
-# DB
-spring.jpa.open-in-view=false
-spring.jpa.hibernate.ddl-auto=validate
-
-# Email
-mail.smtp.host=smtp.gmail.com
-mail.smtp.port=587
-mail.smtp.starttls.enable=true
-```
-
----
-
-## 10) Observability & Ops
-- **Metrics:** JVM, HTTP, Kafka (consumer lag), DB
-- **Tracing:** OpenTelemetry (trace user→txn→wallet→notification)
-- **Logging:** JSON logs + correlation ids
-- **DLQ Processing:** scheduled consumers with alerting
-- **Kafka UI:** deploy `provectus/kafka-ui` locally for inspection
-
----
-
-<img width="1919" height="1031" alt="Screenshot 2025-09-30 170013" src="https://github.com/user-attachments/assets/f1d2f86b-3d46-47fc-9508-94313fd196b7" />
-<img width="1909" height="1045" alt="Screenshot 2025-09-30 165953" src="https://github.com/user-attachments/assets/334d2999-9b2b-4ed9-9084-57e3c1c91ff6" />
-<img width="1865" height="1077" alt="Screenshot 2025-09-30 165944" src="https://github.com/user-attachments/assets/f2b17069-ff30-4653-9a1a-01faa594ef41" />
-<img width="1901" height="1079" alt="Screenshot 2025-09-30 165915" src="https://github.com/user-attachments/assets/690dc996-06f6-4764-aeb5-0e0b8abd62cf" />
-<img width="1913" height="1075" alt="Screenshot 2025-09-30 165904" src="https://github.com/user-attachments/assets/14cf5d3c-c538-40c2-baf3-7c9fcafec57d" />
-<img width="1906" height="1079" alt="Screenshot 2025-09-30 165311" src="https://github.com/user-attachments/assets/194c9f51-c4d2-4305-9641-135c7e414755" />
-<img width="1919" height="1020" alt="Screenshot 2025-09-30 165254" src="https://github.com/user-attachments/assets/f111875c-f6c4-4c64-9b6b-3beaea9ba726" />
-
-
-
-
-## 11) Security
-- JWT for all internal/external APIs; Gateway enforces authN/Z
-- Encrypt PII at rest (email/phone), mask in logs
-- TLS everywhere (Nginx edge + mTLS service-to-service optional)
-- Input validation; size limits on request bodies
-
----
-
-## 12) Local Dev (Docker Compose — outline)
-```yaml
-version: "3.8"
-services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
-  kafka:
-    image: confluentinc/cp-kafka:7.6.1
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.1
-  mysql:
-    image: mysql:8
-  redis:
-    image: redis:7
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-  api-gateway:
-    build: ./api-gateway
-  user-service:
-    build: ./user-service
-  wallet-service:
-    build: ./wallet-service
-  transaction-service:
-    build: ./transaction-service
-  notification-service:
-    build: ./notification-service
-```
-
----
-
-## 13) Repository Analysis & Gaps
-- **Modules present:** `user-service`, `wallet-service`, `Transaction-service`, `notification-service`, `Common-CodeBase` (shared DTO/events)
-- **Initial state:** early scaffolding; ensure each service has its own `pom.xml` and independent build/run
-- **Add**: top-level README with runbook, env vars, topic names, and Postman collection
-- **Common-CodeBase caution:** avoid tight coupling; prefer versioned schema (Avro/JSON) and publish as a dependency artifact
-- **Topics:** standardize names & keys; document partitions and retention
-- **Testing:** contract tests (Spring Cloud Contract), consumer lag alerts, saga happy/failed paths
-- **Resilience:** retries with backoff; DLQs per consumer group; compensations in Transaction-Service
-
----
-
-
+## Future Improvements
+- Add schema contracts and versioned event formats (Avro/JSON Schema).
+- Implement outbox pattern for stronger DB/Kafka consistency.
+- Add resilience patterns (retry/backoff, DLQ, circuit breakers).
+- Add observability stack (OpenTelemetry tracing, metrics dashboards).
+- Add API gateway and centralized authN/authZ.
+- Add fraud model evaluation pipeline and explainability metrics.
+- Add full containerization for all services in Compose.
