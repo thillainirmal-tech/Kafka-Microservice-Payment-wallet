@@ -21,9 +21,10 @@
     <modules>
         <module>user-service</module>
         <module>wallet-service</module>
-        <module>transaction-service</module>
+        <module>Transaction-service</module>
         <module>notification-service</module>
         <module>Common-CodeBase</module>
+        <module>fraud-service</module>
     </modules>
 
     <properties>

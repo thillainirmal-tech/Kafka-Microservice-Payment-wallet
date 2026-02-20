@@ -1,0 +1,17 @@
+server:
+  port: 8086
+
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: llama3.1
+
+fraud:
+  kafka:
+    producer:
+      topic: fraud_results
