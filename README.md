@@ -1,5 +1,8 @@
 # Major-Project — Payment Wallet (Kafka Microservices)
 
+[![CI](https://github.com/thillainirmal-tech/Kafka-Microservice-Payment-wallet/actions/workflows/ci.yml/badge.svg)](https://github.com/thillainirmal-tech/Kafka-Microservice-Payment-wallet/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/thillainirmal-tech/Kafka-Microservice-Payment-wallet)](LICENSE)
+
 > Version: 1.0 · Date: 28 Sep 2025
 
 ---
